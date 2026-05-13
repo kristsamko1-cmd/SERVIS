@@ -1,0 +1,166 @@
+import { getSupabaseClient } from '../lib/supabase'
+import type { Project, ProjectPriority, ProjectStatus } from '../types'
+
+type ProjectRow = {
+  id: string
+  name: string
+  address: string
+  investor?: string | null
+  description?: string | null
+  status: ProjectStatus
+  priority?: ProjectPriority | null
+  progress: number
+  budget?: number | null
+  deadline: string
+  notes?: string | null
+  created_at?: string | null
+  updated_at: string
+  archived_at?: string | null
+  created_by?: string | null
+  project_workers?: { user_id: string }[]
+  tasks?: { id: string; status: string }[]
+}
+
+function mapProject(row: ProjectRow): Project {
+  const tasks = row.tasks ?? []
+
+  return {
+    id: row.id,
+    name: row.name,
+    address: row.address,
+    investor: row.investor ?? '',
+    description: row.description ?? '',
+    status: row.status,
+    priority: row.priority ?? 'Stredná',
+    progress: row.progress,
+    budget: row.budget ?? 0,
+    deadline: row.deadline,
+    notes: row.notes ?? '',
+    workerIds: (row.project_workers ?? []).map((worker) => worker.user_id),
+    taskCount: tasks.length,
+    completedTaskCount: tasks.filter((task) => task.status === 'Hotové').length,
+    lastActivityAt: row.updated_at,
+    createdAt: row.created_at ?? row.updated_at,
+    updatedAt: row.updated_at,
+    archivedAt: row.archived_at,
+    createdBy: row.created_by,
+  }
+}
+
+export type ProjectInput = Omit<
+  Project,
+  'id' | 'createdAt' | 'updatedAt' | 'lastActivityAt' | 'taskCount' | 'completedTaskCount'
+>
+
+export const projectService = {
+  async list(includeArchived = false): Promise<Project[]> {
+    const db = getSupabaseClient()
+    let query = db
+      .from('projects')
+      .select('*, project_workers(user_id), tasks(id, status)')
+      .order('updated_at', { ascending: false })
+
+    if (!includeArchived) {
+      query = query.is('archived_at', null)
+    }
+
+    const { data, error } = await query
+    if (error) throw error
+    return (data ?? []).map((row) => mapProject(row as ProjectRow))
+  },
+
+  async create(project: ProjectInput): Promise<void> {
+    const db = getSupabaseClient()
+    const { data: userData } = await db.auth.getUser()
+    const { data, error } = await db
+      .from('projects')
+      .insert({
+        name: project.name,
+        address: project.address,
+        investor: project.investor,
+        description: project.description,
+        status: project.status,
+        priority: project.priority,
+        progress: project.progress,
+        budget: project.budget,
+        deadline: project.deadline,
+        notes: project.notes,
+        created_by: userData.user?.id ?? null,
+      })
+      .select('id')
+      .single()
+    if (error) throw error
+
+    if (project.workerIds.length > 0) {
+      const { error: workerError } = await db.from('project_workers').insert(
+        project.workerIds.map((userId) => ({
+          project_id: data.id,
+          user_id: userId,
+        })),
+      )
+      if (workerError) throw workerError
+    }
+  },
+
+  async update(projectId: string, payload: Partial<ProjectInput>): Promise<void> {
+    const db = getSupabaseClient()
+    const { error } = await db
+      .from('projects')
+      .update({
+        name: payload.name,
+        address: payload.address,
+        investor: payload.investor,
+        description: payload.description,
+        status: payload.status,
+        priority: payload.priority,
+        progress: payload.progress,
+        budget: payload.budget,
+        deadline: payload.deadline,
+        notes: payload.notes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', projectId)
+    if (error) throw error
+
+    if (payload.workerIds) {
+      const { error: deleteError } = await db.from('project_workers').delete().eq('project_id', projectId)
+      if (deleteError) throw deleteError
+
+      if (payload.workerIds.length > 0) {
+        const { error: workerError } = await db.from('project_workers').insert(
+          payload.workerIds.map((userId) => ({
+            project_id: projectId,
+            user_id: userId,
+          })),
+        )
+        if (workerError) throw workerError
+      }
+    }
+  },
+
+  async archive(projectId: string): Promise<void> {
+    const db = getSupabaseClient()
+    const { error } = await db
+      .from('projects')
+      .update({ archived_at: new Date().toISOString(), status: 'Dokončené', updated_at: new Date().toISOString() })
+      .eq('id', projectId)
+    if (error) throw error
+  },
+
+  async remove(projectId: string): Promise<void> {
+    const db = getSupabaseClient()
+    const { error } = await db.from('projects').delete().eq('id', projectId)
+    if (error) throw error
+  },
+
+  async getById(projectId: string): Promise<Project | null> {
+    const db = getSupabaseClient()
+    const { data, error } = await db
+      .from('projects')
+      .select('*, project_workers(user_id), tasks(id, status)')
+      .eq('id', projectId)
+      .maybeSingle()
+    if (error) throw error
+    return data ? mapProject(data as ProjectRow) : null
+  },
+}
