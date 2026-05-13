@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import type { Session } from '@supabase/supabase-js'
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { getSupabaseClient } from '../lib/supabase'
 import { authService } from '../services/authService'
 import { userService } from '../services/userService'
@@ -31,40 +31,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const refreshProfile = async () => {
+  const refreshProfile = useCallback(async () => {
     const nextSession = await authService.getSession()
     setSession(nextSession)
     if (nextSession?.user.id) {
-      try {
-        const nextProfile = await userService.getCurrentProfile(nextSession.user.id)
-        setProfile(nextProfile ?? fallbackProfile(nextSession))
-      } catch {
-        setProfile(fallbackProfile(nextSession))
-      }
+      setProfile(fallbackProfile(nextSession))
+      void userService
+        .getCurrentProfile(nextSession.user.id)
+        .then((nextProfile) => setProfile(nextProfile ?? fallbackProfile(nextSession)))
+        .catch(() => setProfile(fallbackProfile(nextSession)))
     } else {
       setProfile(null)
     }
-  }
+  }, [])
 
   useEffect(() => {
-    void Promise.resolve().then(() => refreshProfile().finally(() => setLoading(false)))
-
+    let cancelled = false
     const db = getSupabaseClient()
-    const { data } = db.auth.onAuthStateChange(async (_event, nextSession) => {
+
+    const loadPublicProfile = (nextSession: Session) => {
+      void userService
+        .getCurrentProfile(nextSession.user.id)
+        .then((nextProfile) => {
+          if (!cancelled) setProfile(nextProfile ?? fallbackProfile(nextSession))
+        })
+        .catch(() => {
+          if (!cancelled) setProfile(fallbackProfile(nextSession))
+        })
+    }
+
+    const { data } = db.auth.onAuthStateChange((_event, nextSession) => {
+      if (cancelled) return
       setSession(nextSession)
       if (nextSession?.user.id) {
-        try {
-          const nextProfile = await userService.getCurrentProfile(nextSession.user.id)
-          setProfile(nextProfile ?? fallbackProfile(nextSession))
-        } catch {
-          setProfile(fallbackProfile(nextSession))
-        }
+        setProfile(fallbackProfile(nextSession))
+        loadPublicProfile(nextSession)
       } else {
         setProfile(null)
       }
+      setLoading(false)
     })
 
+    const safety = window.setTimeout(() => {
+      if (!cancelled) setLoading(false)
+    }, 12_000)
+
     return () => {
+      cancelled = true
+      window.clearTimeout(safety)
       data.subscription.unsubscribe()
     }
   }, [])
@@ -78,7 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       canEdit: Boolean(profile),
       refreshProfile,
     }),
-    [loading, profile, session],
+    [loading, profile, session, refreshProfile],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
