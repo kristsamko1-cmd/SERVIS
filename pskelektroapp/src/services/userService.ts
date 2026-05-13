@@ -24,7 +24,7 @@ export const userService = {
     const db = getSupabaseClient()
     const { data, error } = await db
       .from('users')
-      .select('id, email, full_name, role, updated_at')
+      .select('id, email, full_name, role')
       .order('full_name', { ascending: true })
     if (error) throw error
     return (data ?? []).map(mapUser)
@@ -34,7 +34,7 @@ export const userService = {
     const db = getSupabaseClient()
     const { data, error } = await db
       .from('users')
-      .select('id, email, full_name, role, updated_at')
+      .select('id, email, full_name, role')
       .eq('id', userId)
       .maybeSingle()
     if (error) throw error

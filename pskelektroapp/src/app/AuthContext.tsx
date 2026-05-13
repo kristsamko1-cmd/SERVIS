@@ -35,8 +35,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const nextSession = await authService.getSession()
     setSession(nextSession)
     if (nextSession?.user.id) {
-      const nextProfile = await userService.getCurrentProfile(nextSession.user.id)
-      setProfile(nextProfile ?? fallbackProfile(nextSession))
+      try {
+        const nextProfile = await userService.getCurrentProfile(nextSession.user.id)
+        setProfile(nextProfile ?? fallbackProfile(nextSession))
+      } catch {
+        setProfile(fallbackProfile(nextSession))
+      }
     } else {
       setProfile(null)
     }
@@ -49,8 +53,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data } = db.auth.onAuthStateChange(async (_event, nextSession) => {
       setSession(nextSession)
       if (nextSession?.user.id) {
-        const nextProfile = await userService.getCurrentProfile(nextSession.user.id)
-        setProfile(nextProfile ?? fallbackProfile(nextSession))
+        try {
+          const nextProfile = await userService.getCurrentProfile(nextSession.user.id)
+          setProfile(nextProfile ?? fallbackProfile(nextSession))
+        } catch {
+          setProfile(fallbackProfile(nextSession))
+        }
       } else {
         setProfile(null)
       }

@@ -21,6 +21,19 @@ type ProjectRow = {
   tasks?: { id: string; status: string }[]
 }
 
+/** DB deployments without extended columns (investor, archived_at, …) return PostgREST/Postgres errors. */
+function isRestSchemaColumnError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const e = error as { code?: string; message?: string }
+  if (e.code === '42703') return true
+  const msg = (e.message ?? '').toLowerCase()
+  return (
+    (msg.includes('column') && (msg.includes('does not exist') || msg.includes('neexistuje'))) ||
+    msg.includes('could not find') ||
+    msg.includes('schema cache')
+  )
+}
+
 function mapProject(row: ProjectRow): Project {
   const tasks = row.tasks ?? []
 
@@ -55,40 +68,50 @@ export type ProjectInput = Omit<
 export const projectService = {
   async list(includeArchived = false): Promise<Project[]> {
     const db = getSupabaseClient()
-    let query = db
+    const { data, error } = await db
       .from('projects')
       .select('*, project_workers(user_id), tasks(id, status)')
       .order('updated_at', { ascending: false })
-
-    if (!includeArchived) {
-      query = query.is('archived_at', null)
-    }
-
-    const { data, error } = await query
     if (error) throw error
-    return (data ?? []).map((row) => mapProject(row as ProjectRow))
+    let rows = (data ?? []) as ProjectRow[]
+    if (!includeArchived) {
+      rows = rows.filter((row) => row.archived_at == null)
+    }
+    return rows.map((row) => mapProject(row))
   },
 
   async create(project: ProjectInput): Promise<void> {
     const db = getSupabaseClient()
     const { data: userData } = await db.auth.getUser()
-    const { data, error } = await db
-      .from('projects')
-      .insert({
-        name: project.name,
-        address: project.address,
-        investor: project.investor,
-        description: project.description,
-        status: project.status,
-        priority: project.priority,
-        progress: project.progress,
-        budget: project.budget,
-        deadline: project.deadline,
-        notes: project.notes,
-        created_by: userData.user?.id ?? null,
-      })
-      .select('id')
-      .single()
+    const fullRow = {
+      name: project.name,
+      address: project.address,
+      investor: project.investor,
+      description: project.description,
+      status: project.status,
+      priority: project.priority,
+      progress: project.progress,
+      budget: project.budget,
+      deadline: project.deadline,
+      notes: project.notes,
+      created_by: userData.user?.id ?? null,
+    }
+    let { data, error } = await db.from('projects').insert(fullRow).select('id').single()
+    if (error && isRestSchemaColumnError(error)) {
+      const retry = await db
+        .from('projects')
+        .insert({
+          name: project.name,
+          address: project.address,
+          status: project.status,
+          progress: project.progress,
+          deadline: project.deadline,
+        })
+        .select('id')
+        .single()
+      data = retry.data
+      error = retry.error
+    }
     if (error) throw error
 
     if (project.workerIds.length > 0) {
@@ -104,22 +127,31 @@ export const projectService = {
 
   async update(projectId: string, payload: Partial<ProjectInput>): Promise<void> {
     const db = getSupabaseClient()
-    const { error } = await db
-      .from('projects')
-      .update({
-        name: payload.name,
-        address: payload.address,
-        investor: payload.investor,
-        description: payload.description,
-        status: payload.status,
-        priority: payload.priority,
-        progress: payload.progress,
-        budget: payload.budget,
-        deadline: payload.deadline,
-        notes: payload.notes,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', projectId)
+    const updatedAt = new Date().toISOString()
+    const fullPatch: Record<string, unknown> = {
+      updated_at: updatedAt,
+      ...(payload.name !== undefined && { name: payload.name }),
+      ...(payload.address !== undefined && { address: payload.address }),
+      ...(payload.investor !== undefined && { investor: payload.investor }),
+      ...(payload.description !== undefined && { description: payload.description }),
+      ...(payload.status !== undefined && { status: payload.status }),
+      ...(payload.priority !== undefined && { priority: payload.priority }),
+      ...(payload.progress !== undefined && { progress: payload.progress }),
+      ...(payload.budget !== undefined && { budget: payload.budget }),
+      ...(payload.deadline !== undefined && { deadline: payload.deadline }),
+      ...(payload.notes !== undefined && { notes: payload.notes }),
+    }
+    let { error } = await db.from('projects').update(fullPatch).eq('id', projectId)
+    if (error && isRestSchemaColumnError(error)) {
+      const minimalPatch: Record<string, unknown> = { updated_at: updatedAt }
+      if (payload.name !== undefined) minimalPatch.name = payload.name
+      if (payload.address !== undefined) minimalPatch.address = payload.address
+      if (payload.status !== undefined) minimalPatch.status = payload.status
+      if (payload.progress !== undefined) minimalPatch.progress = payload.progress
+      if (payload.deadline !== undefined) minimalPatch.deadline = payload.deadline
+      const retry = await db.from('projects').update(minimalPatch).eq('id', projectId)
+      error = retry.error
+    }
     if (error) throw error
 
     if (payload.workerIds) {
@@ -140,11 +172,20 @@ export const projectService = {
 
   async archive(projectId: string): Promise<void> {
     const db = getSupabaseClient()
+    const updatedAt = new Date().toISOString()
     const { error } = await db
       .from('projects')
-      .update({ archived_at: new Date().toISOString(), status: 'Dokončené', updated_at: new Date().toISOString() })
+      .update({ archived_at: new Date().toISOString(), status: 'Dokončené', updated_at: updatedAt })
       .eq('id', projectId)
-    if (error) throw error
+    if (error && isRestSchemaColumnError(error)) {
+      const { error: e2 } = await db
+        .from('projects')
+        .update({ status: 'Dokončené', updated_at: updatedAt })
+        .eq('id', projectId)
+      if (e2) throw e2
+    } else if (error) {
+      throw error
+    }
   },
 
   async remove(projectId: string): Promise<void> {
