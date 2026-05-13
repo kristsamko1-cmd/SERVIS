@@ -29,4 +29,25 @@ export const calendarService = {
     })
     if (error) throw error
   },
+
+  async update(eventId: string, event: Omit<CalendarEvent, 'id' | 'createdAt'>): Promise<void> {
+    const db = getSupabaseClient()
+    const { error } = await db
+      .from('calendar_events')
+      .update({
+        project_id: event.projectId,
+        title: event.title,
+        type: event.type,
+        date: event.date,
+        location: event.location,
+      })
+      .eq('id', eventId)
+    if (error) throw error
+  },
+
+  async remove(eventId: string): Promise<void> {
+    const db = getSupabaseClient()
+    const { error } = await db.from('calendar_events').delete().eq('id', eventId)
+    if (error) throw error
+  },
 }

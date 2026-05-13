@@ -113,6 +113,7 @@ export const projectService = {
       error = retry.error
     }
     if (error) throw error
+    if (!data?.id) throw new Error('Nepodarilo sa získať ID novej stavby.')
 
     if (project.workerIds.length > 0) {
       const { error: workerError } = await db.from('project_workers').insert(

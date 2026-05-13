@@ -104,6 +104,25 @@ export function useProjectMutations(projectId?: string) {
   }
 }
 
+function supabaseErrorMessage(error: unknown, fallback: string): string {
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message: string }).message) || fallback
+  }
+  return fallback
+}
+
+function isRlsOrPermissionError(error: unknown): boolean {
+  const msg = supabaseErrorMessage(error, '').toLowerCase()
+  const code = error && typeof error === 'object' && 'code' in error ? String((error as { code: string }).code) : ''
+  return (
+    code === '42501' ||
+    msg.includes('row-level security') ||
+    msg.includes('rls') ||
+    msg.includes('permission denied') ||
+    msg.includes('new row violates')
+  )
+}
+
 export function useTaskMutations(projectId?: string) {
   const queryClient = useQueryClient()
   const invalidateTasks = async () => {
@@ -123,6 +142,13 @@ export function useTaskMutations(projectId?: string) {
       onSuccess: async () => {
         await invalidateTasks()
         toast.success('Úloha bola vytvorená.')
+      },
+      onError: (error: unknown) => {
+        if (isRlsOrPermissionError(error)) {
+          toast.error('Nové úlohy môže pridávať len projektový manažér (pravidlá v databáze).')
+        } else {
+          toast.error(supabaseErrorMessage(error, 'Úlohu sa nepodarilo vytvoriť.'))
+        }
       },
     }),
     updateTask: useMutation({
@@ -144,7 +170,13 @@ export function useTaskMutations(projectId?: string) {
     }),
     removeTask: useMutation({
       mutationFn: taskService.remove,
-      onSuccess: invalidateTasks,
+      onSuccess: async () => {
+        await invalidateTasks()
+        toast.success('Úloha bola vymazaná.')
+      },
+      onError: (error: unknown) => {
+        toast.error(supabaseErrorMessage(error, 'Úlohu sa nepodarilo vymazať.'))
+      },
     }),
   }
 }
@@ -173,12 +205,44 @@ export function useProjectFileMutations(projectId: string) {
 export function useCalendarMutations() {
   const queryClient = useQueryClient()
 
+  const invalidateCalendar = async () => {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.calendar })
+  }
+
   return {
     createEvent: useMutation({
       mutationFn: (input: Omit<CalendarEvent, 'id' | 'createdAt'>) => calendarService.create(input),
       onSuccess: async () => {
-        await queryClient.invalidateQueries({ queryKey: queryKeys.calendar })
+        await invalidateCalendar()
         toast.success('Udalosť bola pridaná.')
+      },
+      onError: (error: unknown) => {
+        if (isRlsOrPermissionError(error)) {
+          toast.error('Kalendár môže upravovať len projektový manažér.')
+        } else {
+          toast.error(supabaseErrorMessage(error, 'Udalosť sa nepodarilo uložiť.'))
+        }
+      },
+    }),
+    updateEvent: useMutation({
+      mutationFn: ({ id, input }: { id: string; input: Omit<CalendarEvent, 'id' | 'createdAt'> }) =>
+        calendarService.update(id, input),
+      onSuccess: async () => {
+        await invalidateCalendar()
+        toast.success('Udalosť bola upravená.')
+      },
+      onError: (error: unknown) => {
+        toast.error(supabaseErrorMessage(error, 'Udalosť sa nepodarilo upraviť.'))
+      },
+    }),
+    deleteEvent: useMutation({
+      mutationFn: (id: string) => calendarService.remove(id),
+      onSuccess: async () => {
+        await invalidateCalendar()
+        toast.success('Udalosť bola vymazaná.')
+      },
+      onError: (error: unknown) => {
+        toast.error(supabaseErrorMessage(error, 'Udalosť sa nepodarilo vymazať.'))
       },
     }),
   }

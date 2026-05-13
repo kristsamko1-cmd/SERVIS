@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { z } from 'zod'
 import { Filter, Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuth } from '../app/AuthContext'
 import { KanbanBoard } from '../components/tasks/KanbanBoard'
 import { Modal } from '../components/ui/Modal'
 import { Skeleton } from '../components/ui/Skeleton'
@@ -38,10 +39,11 @@ const blankForm = {
 }
 
 export function TasksPage() {
+  const { isManager } = useAuth()
   const tasksQuery = useTasks()
   const projectsQuery = useProjects()
   const workersQuery = useWorkers()
-  const { createTask, updateTask } = useTaskMutations()
+  const { createTask, updateTask, removeTask } = useTaskMutations()
   const [search, setSearch] = useState('')
   const [priority, setPriority] = useState<TaskPriority | 'Všetky'>('Všetky')
   const [modalOpen, setModalOpen] = useState(false)
@@ -62,10 +64,20 @@ export function TasksPage() {
   )
 
   const openCreateModal = () => {
+    if (!isManager) {
+      toast.info('Nové úlohy môže pridávať len projektový manažér.')
+      return
+    }
+    if (projects.length === 0) {
+      toast.error('Najprv vytvorte aspoň jednu stavbu — úloha musí patriť ku konkrétnej stavbe.')
+      return
+    }
     setSelectedTask(null)
     setForm({ ...blankForm, projectId: projects[0]?.id ?? '' })
     setModalOpen(true)
   }
+
+  const canAddTask = isManager && projects.length > 0
 
   const openTaskModal = (task: Task) => {
     setSelectedTask(task)
@@ -103,7 +115,19 @@ export function TasksPage() {
           <h1>Úlohy</h1>
           <p className="muted">Kanban pre denný postup prác, priority a zodpovednosti.</p>
         </div>
-        <button className="primary-btn large-btn" type="button" onClick={openCreateModal}>
+        <button
+          className="primary-btn large-btn"
+          type="button"
+          onClick={openCreateModal}
+          disabled={!canAddTask}
+          title={
+            !isManager
+              ? 'Pridávať úlohy môže len projektový manažér.'
+              : projects.length === 0
+                ? 'Najprv vytvorte stavbu.'
+                : undefined
+          }
+        >
           <Plus size={18} />
           Pridať úlohu
         </button>
@@ -141,7 +165,11 @@ export function TasksPage() {
             event.preventDefault()
             const parsed = taskSchema.safeParse(form)
             if (!parsed.success) {
-              toast.error('Skontrolujte povinné polia.')
+              if (!form.projectId.trim()) {
+                toast.error('Vyberte stavbu — úloha musí patriť ku konkrétnej stavbe.')
+              } else {
+                toast.error(parsed.error.issues[0]?.message ?? 'Skontrolujte povinné polia.')
+              }
               return
             }
             const input = {
@@ -159,12 +187,25 @@ export function TasksPage() {
         >
           <label className="form-field full-span">
             Stavba
-            <select value={form.projectId} onChange={(event) => setForm((prev) => ({ ...prev, projectId: event.target.value }))}>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
+            <select
+              value={form.projectId}
+              onChange={(event) => setForm((prev) => ({ ...prev, projectId: event.target.value }))}
+              required
+            >
+              {projects.length === 0 ? (
+                <option value="">Žiadna stavba — vytvorte stavbu v sekcii Stavby</option>
+              ) : (
+                <>
+                  <option value="" disabled>
+                    Vyberte stavbu…
+                  </option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </>
+              )}
             </select>
           </label>
           <label className="form-field">
@@ -226,9 +267,28 @@ export function TasksPage() {
             Označiť ako urgentné
           </label>
           {selectedTask ? <p className="muted full-span">Vytvorené: {formatDate(selectedTask.createdAt || todayIso())}</p> : null}
-          <button type="submit" className="primary-btn large-btn full-span">
-            {selectedTask ? 'Uložiť úlohu' : 'Vytvoriť úlohu'}
-          </button>
+          <div className="form-actions-row full-span">
+            {selectedTask && isManager ? (
+              <button
+                type="button"
+                className="ghost-btn danger-outline"
+                disabled={removeTask.isPending}
+                onClick={async () => {
+                  if (!selectedTask) return
+                  if (!window.confirm('Naozaj chcete túto úlohu vymazať?')) return
+                  await removeTask.mutateAsync(selectedTask.id)
+                  setModalOpen(false)
+                }}
+              >
+                Vymazať úlohu
+              </button>
+            ) : (
+              <span />
+            )}
+            <button type="submit" className="primary-btn large-btn" disabled={createTask.isPending || updateTask.isPending}>
+              {selectedTask ? 'Uložiť úlohu' : 'Vytvoriť úlohu'}
+            </button>
+          </div>
         </form>
       </Modal>
     </section>
