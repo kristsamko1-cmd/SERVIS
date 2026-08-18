@@ -1,20 +1,26 @@
-import type { PropsWithChildren, ReactNode } from 'react'
+import { cn } from '@/lib/utils'
 
-interface CardProps extends PropsWithChildren {
-  title?: string
-  actions?: ReactNode
+export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn('glass-card rounded-xl p-6 transition-all hover:border-border/80', className)}
+      {...props}
+    />
+  )
 }
 
-export function Card({ title, actions, children }: CardProps) {
-  return (
-    <section className="card">
-      {(title || actions) && (
-        <header className="card-header">
-          {title ? <h3>{title}</h3> : <span />}
-          {actions}
-        </header>
-      )}
-      {children}
-    </section>
-  )
+export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('flex flex-col gap-1.5 mb-4', className)} {...props} />
+}
+
+export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
+  return <h3 className={cn('text-lg font-semibold tracking-tight', className)} {...props} />
+}
+
+export function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
+  return <p className={cn('text-sm text-muted', className)} {...props} />
+}
+
+export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('', className)} {...props} />
 }

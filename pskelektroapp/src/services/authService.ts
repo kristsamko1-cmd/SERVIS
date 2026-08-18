@@ -1,6 +1,6 @@
 import type { Session } from '@supabase/supabase-js'
 import { getSupabaseClient } from '../lib/supabase'
-import type { UserRole } from '../types'
+import type { LegacyUserRole as UserRole } from '../types/legacy'
 
 export const authService = {
   async signIn(email: string, password: string): Promise<void> {

@@ -1,9 +1,16 @@
-import type { EventType, ProjectPriority, ProjectStatus, TaskPriority, TaskStatus, UserRole } from '../types'
+import type {
+  EventType,
+  LegacyProjectStatus,
+  LegacyUserRole,
+  ProjectPriority,
+  TaskPriority,
+  TaskStatus,
+} from '../types/legacy'
 
-export const roles: UserRole[] = ['Projektový manažér', 'Elektrikár', 'Pomocník']
-export const projectStatuses: ProjectStatus[] = ['Plánované', 'Rozpracované', 'Čaká sa', 'Dokončené']
+export const roles: LegacyUserRole[] = ['Projektový manažér', 'Elektrikár', 'Pomocník']
+export const projectStatuses: LegacyProjectStatus[] = ['Plánované', 'Prebieha', 'Dokončené', 'Archivované']
 export const projectPriorities: ProjectPriority[] = ['Nízka', 'Stredná', 'Vysoká']
-export const taskStatuses: TaskStatus[] = ['Na spravenie', 'Rozpracované', 'Čaká sa', 'Hotové']
+export const taskStatuses: TaskStatus[] = ['Nové', 'Prebieha', 'Hotové', 'Zrušené']
 export const taskPriorities: TaskPriority[] = ['Nízka', 'Stredná', 'Vysoká']
 export const eventTypes: EventType[] = ['Montáž', 'Obhliadka', 'Stretnutie', 'Termín', 'Revízia']
 

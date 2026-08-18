@@ -1,75 +1,125 @@
 /* eslint-disable react-refresh/only-export-components */
 import type { Session } from '@supabase/supabase-js'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { getSupabaseClient } from '../lib/supabase'
-import { authService } from '../services/authService'
-import { userService } from '../services/userService'
-import type { UserProfile } from '../types'
+import { hasSupabaseConfig } from '@/lib/supabase'
+import { authService } from '@/services/authService'
+import { mockAuthService, type MockSession } from '@/services/mockAuthService'
+import { userService } from '@/services/userService'
+import type { UserRole } from '@/types/entities'
+
+export interface AuthProfile {
+  id: string
+  email: string
+  name: string
+  role: UserRole
+}
 
 interface AuthContextValue {
-  session: Session | null
-  profile: UserProfile | null
+  session: Session | MockSession | null
+  profile: AuthProfile | null
   loading: boolean
   isManager: boolean
+  isAdmin: boolean
   canEdit: boolean
   refreshProfile: () => Promise<void>
+  isMockMode: boolean
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-function fallbackProfile(session: Session): UserProfile {
+function fallbackProfile(session: Session | MockSession): AuthProfile {
+  const meta = session.user.user_metadata as { full_name?: string; role?: UserRole }
   return {
     id: session.user.id,
     email: session.user.email ?? '',
-    name: (session.user.user_metadata.full_name as string | undefined) ?? 'Používateľ',
-    role: 'Projektový manažér',
+    name: meta.full_name ?? 'Používateľ',
+    role: meta.role ?? 'Technik',
   }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null)
-  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [session, setSession] = useState<Session | MockSession | null>(null)
+  const [profile, setProfile] = useState<AuthProfile | null>(null)
   const [loading, setLoading] = useState(true)
+  const isMockMode = !hasSupabaseConfig
 
   const refreshProfile = useCallback(async () => {
+    if (isMockMode) {
+      const nextSession = await mockAuthService.getSession()
+      setSession(nextSession)
+      setProfile(nextSession ? mockAuthService.getProfileFromSession(nextSession) : null)
+      return
+    }
+
     const nextSession = await authService.getSession()
     setSession(nextSession)
     if (nextSession?.user.id) {
       setProfile(fallbackProfile(nextSession))
       void userService
         .getCurrentProfile(nextSession.user.id)
-        .then((nextProfile) => setProfile(nextProfile ?? fallbackProfile(nextSession)))
+        .then((nextProfile) => {
+          if (nextProfile) {
+            setProfile({
+              id: nextProfile.id,
+              email: nextProfile.email,
+              name: nextProfile.name,
+              role: nextProfile.role as UserRole,
+            })
+          }
+        })
         .catch(() => setProfile(fallbackProfile(nextSession)))
     } else {
       setProfile(null)
     }
-  }, [])
+  }, [isMockMode])
 
   useEffect(() => {
     let cancelled = false
-    const db = getSupabaseClient()
 
-    const loadPublicProfile = (nextSession: Session) => {
-      void userService
-        .getCurrentProfile(nextSession.user.id)
-        .then((nextProfile) => {
-          if (!cancelled) setProfile(nextProfile ?? fallbackProfile(nextSession))
-        })
-        .catch(() => {
-          if (!cancelled) setProfile(fallbackProfile(nextSession))
-        })
+    if (isMockMode) {
+      void mockAuthService.getSession().then((nextSession) => {
+        if (cancelled) return
+        setSession(nextSession)
+        setProfile(nextSession ? mockAuthService.getProfileFromSession(nextSession) : null)
+        setLoading(false)
+      })
+      return () => {
+        cancelled = true
+      }
     }
 
-    const { data } = db.auth.onAuthStateChange((_event, nextSession) => {
-      if (cancelled) return
-      setSession(nextSession)
-      if (nextSession?.user.id) {
-        setProfile(fallbackProfile(nextSession))
-        loadPublicProfile(nextSession)
-      } else {
-        setProfile(null)
+    void import('@/lib/supabase').then(({ getSupabaseClient }) => {
+      const db = getSupabaseClient()
+      const { data } = db.auth.onAuthStateChange((_event, nextSession) => {
+        if (cancelled) return
+        setSession(nextSession)
+        if (nextSession?.user.id) {
+          setProfile(fallbackProfile(nextSession))
+          void userService
+            .getCurrentProfile(nextSession.user.id)
+            .then((nextProfile) => {
+              if (!cancelled && nextProfile) {
+                setProfile({
+                  id: nextProfile.id,
+                  email: nextProfile.email,
+                  name: nextProfile.name,
+                  role: nextProfile.role as UserRole,
+                })
+              }
+            })
+            .catch(() => {
+              if (!cancelled) setProfile(fallbackProfile(nextSession))
+            })
+        } else {
+          setProfile(null)
+        }
+        setLoading(false)
+      })
+
+      return () => {
+        cancelled = true
+        data.subscription.unsubscribe()
       }
-      setLoading(false)
     })
 
     const safety = window.setTimeout(() => {
@@ -79,20 +129,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true
       window.clearTimeout(safety)
-      data.subscription.unsubscribe()
     }
-  }, [])
+  }, [isMockMode])
 
   const value = useMemo(
     () => ({
       session,
       profile,
       loading,
-      isManager: profile?.role === 'Projektový manažér',
+      isManager: profile?.role === 'Projektový manažér' || profile?.role === 'Administrátor',
+      isAdmin: profile?.role === 'Administrátor',
       canEdit: Boolean(profile),
       refreshProfile,
+      isMockMode,
     }),
-    [loading, profile, session, refreshProfile],
+    [loading, profile, session, refreshProfile, isMockMode],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

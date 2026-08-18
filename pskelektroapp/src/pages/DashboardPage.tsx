@@ -1,140 +1,82 @@
-import { Activity, AlertTriangle, CalendarClock, FolderKanban, ListChecks, TrendingUp } from 'lucide-react'
-import { motion } from 'framer-motion'
-import { Card } from '../components/ui/Card'
-import { EmptyState } from '../components/ui/EmptyState'
-import { ProgressBar } from '../components/ui/ProgressBar'
-import { Skeleton } from '../components/ui/Skeleton'
-import { StatCard } from '../components/ui/StatCard'
-import { formatDate, todayIso } from '../lib/constants'
-import { useCalendarEvents, useProjects, useTasks } from '../hooks/useAppData'
+import {
+  Building2,
+  CalendarCheck,
+  Car,
+  Package,
+  Users,
+  Wrench,
+} from 'lucide-react'
+import { ActivityTimeline } from '@/components/dashboard/ActivityTimeline'
+import {
+  EmployeeWorkloadChart,
+  ProjectsMonthlyChart,
+  ToolUsageChart,
+  WarehouseStockChart,
+} from '@/components/dashboard/Charts'
+import { PageHeader, StatCard } from '@/components/shared/PageHeader'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  useActivities,
+  useChartData,
+  useDashboardStats,
+} from '@/hooks/useFleetData'
 
 export function DashboardPage() {
-  const projectsQuery = useProjects()
-  const tasksQuery = useTasks()
-  const eventsQuery = useCalendarEvents()
-  const projects = projectsQuery.data ?? []
-  const tasks = tasksQuery.data ?? []
-  const events = eventsQuery.data ?? []
-  const today = todayIso()
-  const loading = projectsQuery.isLoading || tasksQuery.isLoading
-  const activeProjects = projects.filter((project) => project.status !== 'Dokončené')
-  const openTasks = tasks.filter((task) => task.status !== 'Hotové')
-  const urgentTasks = tasks.filter((task) => task.urgent || task.priority === 'Vysoká')
-  const averageProgress = projects.length
-    ? Math.round(projects.reduce((total, project) => total + project.progress, 0) / projects.length)
-    : 0
+  const statsQuery = useDashboardStats()
+  const activitiesQuery = useActivities()
+  const toolUsageQuery = useChartData('toolUsage')
+  const projectsQuery = useChartData('projectsMonthly')
+  const workloadQuery = useChartData('employeeWorkload')
+  const warehouseQuery = useChartData('warehouseStock')
+
+  const loading = statsQuery.isLoading
 
   if (loading) {
     return (
       <section>
-        <header className="page-header">
-          <div>
-            <h1>Dashboard</h1>
-            <p className="muted">Načítavam operatívny prehľad.</p>
-          </div>
-        </header>
-        <Skeleton rows={8} />
+        <PageHeader title="Dashboard" description="Načítavam prehľad systému..." />
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-28" />
+          ))}
+        </div>
+        <div className="grid lg:grid-cols-2 gap-6">
+          <Skeleton className="h-72" />
+          <Skeleton className="h-72" />
+        </div>
       </section>
     )
   }
 
+  const stats = statsQuery.data!
+
   return (
-    <section>
-      <header className="page-header">
-        <div>
-          <h1>Dashboard</h1>
-          <p className="muted">Rýchly prehľad stavieb, úloh, termínov a poslednej aktivity.</p>
-        </div>
-      </header>
+    <section className="animate-in">
+      <PageHeader
+        title="Dashboard"
+        description="Prehľad stavieb, zamestnancov, náradia a aktivity firmy."
+      />
 
-      <div className="stats-grid">
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <StatCard label="Aktívne stavby" value={String(activeProjects.length)} icon={<FolderKanban size={18} />} />
-        </motion.div>
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}>
-          <StatCard label="Otvorené úlohy" value={String(openTasks.length)} icon={<ListChecks size={18} />} />
-        </motion.div>
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }}>
-          <StatCard label="Najbližšie termíny" value={String(events.filter((event) => event.date >= today).length)} icon={<CalendarClock size={18} />} />
-        </motion.div>
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
-          <StatCard label="Priemerný progres" value={`${averageProgress}%`} icon={<TrendingUp size={18} />} />
-        </motion.div>
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
+        <StatCard label="Aktívne stavby" value={stats.activeSites} icon={<Building2 size={20} />} delay={0} />
+        <StatCard label="Online" value={stats.employeesOnline} icon={<Users size={20} />} delay={0.04} />
+        <StatCard label="Náradie" value={stats.toolsCount} icon={<Wrench size={20} />} delay={0.08} />
+        <StatCard label="Inventár" value={stats.inventoryCount} icon={<Package size={20} />} delay={0.12} />
+        <StatCard label="Vozidlá" value={stats.vehiclesCount} icon={<Car size={20} />} delay={0.16} />
+        <StatCard label="Rezervácie" value={stats.activeReservations} icon={<CalendarCheck size={20} />} delay={0.2} />
       </div>
 
-      <div className="grid-2">
-        <Card title="Aktívne stavby">
-          {activeProjects.length === 0 ? (
-            <EmptyState title="Žiadne aktívne stavby" text="Nové stavby vytvoríte v sekcii Stavby." />
-          ) : (
-            activeProjects.slice(0, 5).map((project) => (
-              <div key={project.id} className="row-item">
-                <div>
-                  <strong>{project.name}</strong>
-                  <p className="muted">{project.address}</p>
-                </div>
-                <div className="row-right">
-                  <span>{project.progress}%</span>
-                  <ProgressBar value={project.progress} />
-                </div>
-              </div>
-            ))
-          )}
-        </Card>
-
-        <Card title="Dnešné a urgentné úlohy">
-          {openTasks.length === 0 ? (
-            <EmptyState title="Bez otvorených úloh" text="Všetky úlohy sú hotové alebo čakajú na nové zadanie." />
-          ) : (
-            openTasks
-              .filter((task) => task.deadline <= today || task.urgent || task.priority === 'Vysoká')
-              .slice(0, 6)
-              .map((task) => (
-                <div key={task.id} className="row-item">
-                  <div>
-                    <strong>{task.title}</strong>
-                    <p className="muted">Deadline: {formatDate(task.deadline)}</p>
-                  </div>
-                  <span className="status-inline">
-                    {urgentTasks.some((item) => item.id === task.id) ? <AlertTriangle size={15} /> : null}
-                    {task.status}
-                  </span>
-                </div>
-              ))
-          )}
-        </Card>
+      <div className="grid lg:grid-cols-2 gap-6 mb-6">
+        <ToolUsageChart data={toolUsageQuery.data} loading={toolUsageQuery.isLoading} />
+        <ProjectsMonthlyChart data={projectsQuery.data} loading={projectsQuery.isLoading} />
       </div>
 
-      <div className="grid-2">
-        <Card title="Graf progresu">
-          <div className="chart-bars">
-            {activeProjects.slice(0, 8).map((project) => (
-              <div key={project.id} className="chart-row">
-                <span>{project.name}</span>
-                <div className="chart-track">
-                  <div style={{ width: `${project.progress}%` }} />
-                </div>
-                <strong>{project.progress}%</strong>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card title="Posledná aktivita">
-          {[...projects]
-            .sort((first, second) => new Date(second.updatedAt).getTime() - new Date(first.updatedAt).getTime())
-            .slice(0, 6)
-            .map((project) => (
-              <div key={project.id} className="row-item">
-                <span className="status-inline">
-                  <Activity size={15} />
-                  {project.name}
-                </span>
-                <span className="muted">{formatDate(project.updatedAt)}</span>
-              </div>
-            ))}
-        </Card>
+      <div className="grid lg:grid-cols-2 gap-6 mb-6">
+        <EmployeeWorkloadChart data={workloadQuery.data} loading={workloadQuery.isLoading} />
+        <WarehouseStockChart data={warehouseQuery.data} loading={warehouseQuery.isLoading} />
       </div>
+
+      <ActivityTimeline activities={activitiesQuery.data} loading={activitiesQuery.isLoading} />
     </section>
   )
 }

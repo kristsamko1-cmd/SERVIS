@@ -1,5 +1,5 @@
 import { Navigate, Outlet } from 'react-router-dom'
-import { LoadingState } from '../components/ui/LoadingState'
+import { LoadingState } from '@/components/ui/skeleton'
 import { useAuth } from './AuthContext'
 
 export function RequireAuth() {

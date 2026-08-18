@@ -1,31 +1,34 @@
 import { Outlet } from 'react-router-dom'
-import { CalendarDays, FolderKanban, LayoutDashboard, ListChecks } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
-import { Sidebar } from './Sidebar'
+import { mobileNavLinks, Sidebar } from './Sidebar'
 import { TopNavbar } from './TopNavbar'
-import { useRealtimeInvalidation } from '../../hooks/useRealtimeInvalidation'
-
-const mobileLinks = [
-  { to: '/', label: 'Domov', icon: LayoutDashboard },
-  { to: '/stavby', label: 'Stavby', icon: FolderKanban },
-  { to: '/ulohy', label: 'Úlohy', icon: ListChecks },
-  { to: '/kalendar', label: 'Kalendár', icon: CalendarDays },
-]
+import { cn } from '@/lib/utils'
 
 export function AppShell() {
-  useRealtimeInvalidation()
-
   return (
-    <div className="app-shell">
+    <div className="flex min-h-screen">
       <Sidebar />
-      <div className="content-area">
+      <div className="flex-1 flex flex-col min-w-0">
         <TopNavbar />
-        <main className="page-wrap">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 pb-24 lg:pb-8 overflow-x-hidden">
           <Outlet />
         </main>
-        <nav className="bottom-nav" aria-label="Mobilná navigácia">
-          {mobileLinks.map((link) => (
-            <NavLink key={link.to} to={link.to} end={link.to === '/'}>
+        <nav
+          className="lg:hidden fixed bottom-0 inset-x-0 z-40 flex items-center justify-around h-16 border-t border-border/50 bg-surface/90 backdrop-blur-xl px-2"
+          aria-label="Mobilná navigácia"
+        >
+          {mobileNavLinks.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              end={link.end}
+              className={({ isActive }) =>
+                cn(
+                  'flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg text-[10px] font-medium transition-colors min-w-[56px]',
+                  isActive ? 'text-primary' : 'text-muted',
+                )
+              }
+            >
               <link.icon size={20} />
               <span>{link.label}</span>
             </NavLink>

@@ -1,5 +1,5 @@
 import { getSupabaseClient } from '../lib/supabase'
-import type { UserProfile, Worker } from '../types'
+import type { UserProfile, Worker } from '../types/legacy'
 
 type UserRow = {
   id: string
@@ -15,7 +15,6 @@ function mapUser(row: UserRow): UserProfile {
     email: row.email,
     name: row.full_name,
     role: row.role,
-    online: row.updated_at ? Date.now() - new Date(row.updated_at).getTime() < 1000 * 60 * 15 : false,
   }
 }
 
