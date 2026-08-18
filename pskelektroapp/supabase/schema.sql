@@ -174,76 +174,8 @@ begin
 end;
 $$;
 
-create or replace function public.is_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from public.users u
-    where u.id = auth.uid()
-      and u.role = 'Administrátor'
-  );
-$$;
-
-create or replace function public.is_manager_or_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from public.users u
-    where u.id = auth.uid()
-      and u.role in ('Administrátor', 'Projektový manažér', 'Vedúci montáže')
-  );
-$$;
-
-create or replace function public.current_employee_id()
-returns uuid
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select u.employee_id
-  from public.users u
-  where u.id = auth.uid();
-$$;
-
--- Auto-vytvorenie profilu po registrácii
-create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  insert into public.users (id, email, full_name, role)
-  values (
-    new.id,
-    new.email,
-    coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
-    coalesce(
-      (new.raw_user_meta_data->>'role')::public.user_role,
-      'Technik'::public.user_role
-    )
-  )
-  on conflict (id) do nothing;
-  return new;
-end;
-$$;
-
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute function public.handle_new_user();
-
 -- ---------------------------------------------------------------------------
--- USERS (profily prepojené s auth.users)
+-- USERS (profily prepojené s auth.users) – musí existovať pred funkciami
 -- ---------------------------------------------------------------------------
 create table if not exists public.users (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -282,6 +214,78 @@ alter table public.users
 alter table public.users
   add constraint users_employee_id_fkey
   foreign key (employee_id) references public.employees(id) on delete set null;
+
+-- ---------------------------------------------------------------------------
+-- Pomocné funkcie (až po vytvorení tabuliek)
+-- ---------------------------------------------------------------------------
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.users u
+    where u.id = auth.uid()
+      and u.role = 'Administrátor'
+  );
+$$;
+
+create or replace function public.is_manager_or_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.users u
+    where u.id = auth.uid()
+      and u.role in ('Administrátor', 'Projektový manažér', 'Vedúci montáže')
+  );
+$$;
+
+create or replace function public.current_employee_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (select u.employee_id from public.users u where u.id = auth.uid()),
+    (select e.id from public.employees e where e.user_id = auth.uid() limit 1)
+  );
+$$;
+
+-- Auto-vytvorenie profilu po registrácii
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.users (id, email, full_name, role)
+  values (
+    new.id,
+    new.email,
+    coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
+    coalesce(
+      (new.raw_user_meta_data->>'role')::public.user_role,
+      'Technik'::public.user_role
+    )
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
 
 -- ---------------------------------------------------------------------------
 -- CONSTRUCTION SITES
